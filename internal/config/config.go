@@ -104,6 +104,12 @@ type Config struct {
 func Load(path string) (*Config, string, error) {
 	resolvedPath, err := resolveConfigPath(path)
 	if err != nil {
+		// Fallback: build config from environment variables
+		if cfg := loadFromEnv(); cfg != nil {
+			slog.Info("Config loaded from environment variables")
+			ApplyDefaults(cfg)
+			return cfg, "(env)", nil
+		}
 		return nil, "", err
 	}
 
@@ -348,4 +354,46 @@ func parseYAMLFlat(data []byte) (map[string]interface{}, error) {
 		return nil, err
 	}
 	return out, nil
+}
+
+
+// loadFromEnv builds a Config from environment variables when no config file is found.
+func loadFromEnv() *Config {
+	// Require at least REDIS_ADDR to consider env-based config valid
+	redisAddr := os.Getenv("REDIS_ADDR")
+	if redisAddr == "" {
+		return nil
+	}
+	cfg := &Config{
+		Port:          envOrDefault("PORT", "3002"),
+		StoreMode:     "redis",
+		RedisAddr:     redisAddr,
+		RedisPassword: os.Getenv("REDIS_PASSWORD"),
+		RedisDB:       envInt("REDIS_DB", 0),
+		RedisPrefix:   envOrDefault("REDIS_PREFIX", "orchids:"),
+		AdminUser:     envOrDefault("ADMIN_USER", "admin"),
+		AdminPass:     os.Getenv("ADMIN_PASS"),
+		AdminPath:     envOrDefault("ADMIN_PATH", "/admin"),
+		AdminToken:    os.Getenv("ADMIN_TOKEN"),
+		DebugEnabled:  os.Getenv("DEBUG_ENABLED") == "true",
+		ProxyHTTP:     os.Getenv("PROXY_HTTP"),
+		ProxyHTTPS:    os.Getenv("PROXY_HTTPS"),
+	}
+	return cfg
+}
+
+func envOrDefault(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}
+
+func envInt(key string, def int) int {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
+	}
+	return def
 }
